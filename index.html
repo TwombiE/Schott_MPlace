@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+<title>MPlace Schott</title>
+
+<!-- PWA / iOS -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MPlace Schott">
+
+<!-- App Icon -->
+<link rel="apple-touch-icon" sizes="512x512" href="./icon.png">
+
+<style>
+:root {
+  --bg: radial-gradient(1200px at 50% -200px, #1b2133, #0b0d12);
+  --card: rgba(22, 26, 38, 0.85);
+  --accent: #6cb4ff;
+  --accent-soft: rgba(108,180,255,.25);
+  --text: #ffffff;
+  --muted: #9aa3b2;
+}
+
+* { box-sizing: border-box; font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; -webkit-tap-highlight-color: transparent; }
+html { overflow: hidden; overscroll-behavior: none; }
+body { margin:0; height:100vh; background: var(--bg); color: var(--text); display:flex; justify-content:center; align-items:center; touch-action:none; }
+.app { width:100%; max-width:420px; padding:20px; }
+.card { background: var(--card); backdrop-filter: blur(14px); border-radius:22px; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,.5);}
+h1 { text-align:center; font-size:20px; margin:0 0 6px;}
+.filename { text-align:center; font-size:13px; color:var(--muted); margin-bottom:24px; word-break:break-word; }
+.controls { display:flex; justify-content:center; align-items:center; gap:22px; margin-bottom:18px; }
+button { border:none; background:none; color:var(--text); cursor:pointer; }
+.play { width:76px; height:76px; border-radius:50%; background:linear-gradient(145deg, var(--accent), #3a7fdc); box-shadow:0 10px 30px var(--accent-soft); font-size:28px; color:#000;}
+.small { width:44px; height:44px; border-radius:50%; background:rgba(255,255,255,.08); font-size:16px;}
+input[type=range]{ width:100%; height:4px; appearance:none; background:rgba(255,255,255,.15); border-radius:4px;}
+input[type=range]::-webkit-slider-thumb{ appearance:none; width:16px; height:16px; background:var(--accent); border-radius:50%; }
+.settings-toggle { margin-top:18px; width:100%; padding:12px; border-radius:12px; background:rgba(255,255,255,.08); font-size:14px; }
+.settings { margin-top:18px; display:none; }
+.settings label { display:block; margin-bottom:14px; font-size:13px; color:var(--muted);}
+select, input[type=number]{ width:100%; margin-top:6px; padding:10px; border-radius:10px; border:none; background:rgba(255,255,255,.1); color:white; }
+.list { margin-top:20px; max-height:200px; overflow-y:auto; }
+.list button { width:100%; padding:10px 12px; border-radius:10px; margin-bottom:6px; background:rgba(255,255,255,.06); text-align:left; font-size:13px; }
+footer { position:fixed; bottom:12px; font-size:12px; color:var(--muted);}
+</style>
+</head>
+
+<body>
+<div class="app">
+  <div class="card">
+    <h1>MPlace Schott</h1>
+    <div class="filename" id="filename">—</div>
+
+    <div class="controls">
+      <button class="small" onclick="seek(-15)">⏪</button>
+      <button class="play" id="playBtn" onclick="togglePlay()">▶</button>
+      <button class="small" onclick="seek(15)">⏩</button>
+    </div>
+
+    <input type="range" id="progress" min="0" max="100" value="0">
+
+    <button class="settings-toggle" onclick="toggleSettings()">⚙️ Einstellungen</button>
+
+    <div class="settings" id="settings">
+      <label>
+        Wiedergabe-Modus
+        <select id="mode">
+          <option value="chrono">Chronologisch</option>
+          <option value="random">Zufällig</option>
+        </select>
+      </label>
+
+      <label>
+        Folgen bis Stop
+        <input type="number" id="limit" min="1">
+      </label>
+    </div>
+
+    <div class="list" id="list"></div>
+  </div>
+</div>
+
+<audio id="audio"></audio>
+
+<footer>TwE-Studios</footer>
+
+<script>
+let tracks = [];
+
+fetch("./tracks.json")
+  .then(r => r.json())
+  .then(data => { tracks = data; initPlayer(); });
+
+const audio = document.getElementById("audio");
+const filename = document.getElementById("filename");
+const progress = document.getElementById("progress");
+const playBtn = document.getElementById("playBtn");
+const list = document.getElementById("list");
+
+let index = Number(localStorage.getItem("lastIndex")) || 0;
+let played = 0;
+
+const settings = {
+  mode: localStorage.getItem("mode") || "chrono",
+  limit: Number(localStorage.getItem("limit")) || 5
+};
+
+document.getElementById("mode").value = settings.mode;
+document.getElementById("limit").value = settings.limit;
+
+function initPlayer(){ loadTrack(index); buildList(); }
+
+function loadTrack(i){
+  index=i;
+  audio.src=tracks[index];
+  filename.textContent=tracks[index].split("/").pop();
+  localStorage.setItem("lastIndex",index);
+  updateMediaSession();
+}
+
+function togglePlay(){
+  if(audio.paused){ audio.play(); playBtn.textContent="⏸"; } 
+  else{ audio.pause(); playBtn.textContent="▶"; }
+  updateMediaSession();
+}
+
+function seek(sec){ audio.currentTime+=sec; }
+
+audio.addEventListener("ended", ()=>{
+  played++;
+  if(played>=settings.limit) return;
+
+  if(settings.mode==="random"){
+    let nextIndex;
+    do{
+      nextIndex=Math.floor(Math.random()*tracks.length);
+    } while(tracks.length>1 && nextIndex===index);
+    index=nextIndex;
+  } else {
+    index=(index+1)%tracks.length;
+  }
+
+  loadTrack(index);
+  audio.play();
+  playBtn.textContent="⏸";
+});
+
+audio.addEventListener("timeupdate", ()=>{ progress.value=(audio.currentTime/audio.duration)*100||0; });
+progress.oninput=()=>{ audio.currentTime=(progress.value/100)*audio.duration; }
+
+function toggleSettings(){
+  const s=document.getElementById("settings");
+  s.style.display=s.style.display==="block"?"none":"block";
+}
+
+document.getElementById("mode").onchange = e => {
+  settings.mode = e.target.value;
+  localStorage.setItem("mode", e.target.value);
+};
+
+document.getElementById("limit").onchange = e => {
+  settings.limit = Number(e.target.value);
+  localStorage.setItem("limit", e.target.value);
+};
+
+function buildList(){
+  list.innerHTML="";
+  tracks.forEach((t,i)=>{
+    const b=document.createElement("button");
+    b.textContent=t.split("/").pop();
+    b.onclick=()=>{
+      played=0;
+      loadTrack(i);
+      audio.play();
+      playBtn.textContent="⏸";
+    };
+    list.appendChild(b);
+  });
+}
+
+/* ===== iOS LOCKSCREEN / MEDIA SESSION ===== */
+function updateMediaSession(){
+  if(!("mediaSession" in navigator)) return;
+
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: filename.textContent,
+    artist: "Schott - TwE-Studios",
+    album: "Audio",
+    artwork: [ { src:"./icon.png", sizes:"512x512", type:"image/png" } ]
+  });
+
+  navigator.mediaSession.setActionHandler("play", ()=>{ audio.play(); playBtn.textContent="⏸"; });
+  navigator.mediaSession.setActionHandler("pause", ()=>{ audio.pause(); playBtn.textContent="▶"; });
+  navigator.mediaSession.setActionHandler("seekbackward", ()=>{ audio.currentTime=Math.max(audio.currentTime-15,0); });
+  navigator.mediaSession.setActionHandler("seekforward", ()=>{ audio.currentTime=Math.min(audio.currentTime+15,audio.duration); });
+}
+</script>
+</body>
+</html>
